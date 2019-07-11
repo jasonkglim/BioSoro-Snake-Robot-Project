@@ -4,15 +4,17 @@ import matplotlib.pyplot as plt
 
 # robot parameters
 mu_t = 0.01
-mu_n = 0.65
+mu_n = 0.9
 n = 8
 link_mass = 1.
 link_length = 1.
 link_radius = 0.1
 lG = 0.5 # distance to center of gravity of link
+lf = 0.1 # distance to friction point (wheels)
 masses = np.repeat(link_mass, n)
 lengths = np.repeat(link_length, n)
 Glengths = np.repeat(lG, n)
+flengths = np.repeat(lf, n)
 L = np.sum(lengths)
 mass_total = np.sum(masses)
 
@@ -22,13 +24,14 @@ alpha_0 = np.pi / 6.
 Kn = 1
 vel_s = 1.2
 phi_offset = 0
-heading = 0.1
+heading = 0
 Bl = 2*Kn*np.pi/L
 Bn = 2*Kn*np.pi/n
 period = (L / vel_s)
 N_t = 100
 tstep = period / N_t
 g = np.asmatrix([[9.8*np.sin(incline)], [0]])
+sim_time = 3*N_t
 
   
 # initialize all matrices and vectors
@@ -58,8 +61,11 @@ init_vel = np.asmatrix(np.zeros(shape=(2,1)))
 joint_pos = np.array([np.asmatrix(np.zeros(shape=(2, 1))) for i in range(n+1)])
 joint_vel = np.array([np.asmatrix(np.zeros(shape=(2, 1))) for i in range(n+1)])
 joint_acl = np.array([np.asmatrix(np.zeros(shape=(2, 1))) for i in range(n+1)])
+center_pos = np.asmatrix(np.zeros(shape=(2, 1)))
+center_vel = np.asmatrix(np.zeros(shape=(2, 1)))
 
-# Inertial and force matrices/vectors
+
+# Inertial and force, torque matrices/vectors
 moi = np.zeros(n)
 M = np.asmatrix(np.ones(shape=(n, n)))
 M_0 = np.asmatrix(np.zeros(shape=(n, 2)))
@@ -67,6 +73,9 @@ m_0 =  mass_total * np.asmatrix(np.diag(np.ones(2)))
 m = np.asmatrix(np.zeros(shape=(2, n)))
 f_f = np.asmatrix(np.ones(shape=(2, 1)))
 f_0 = np.asmatrix(np.ones(shape=(2, 1)))
+T = np.asmatrix(np.zeros(shape=(n-1, 1)))
+T_f = np.asmatrix(np.zeros(shape=(n, 1)))
+T_0 = np.asmatrix(np.zeros(shape=(n, 1)))
 mbar = np.zeros(n)
 for i in range(n):
   # Individual link moment of inertias, modeled as solid cylinders
@@ -92,17 +101,21 @@ sign_n = np.zeros(n)
 u_t = np.array([np.zeros(2) for i in range(n)])
 u_n = np.array([np.zeros(2) for i in range(n)])
 
-
 # Plot arrays
-x_t = np.array( [np.zeros(3*N_t) for i in range(n+1) ] )
-y_t = np.array( [np.zeros(3*N_t) for i in range(n+1) ] )
+x_t = np.array( [np.zeros(sim_time) for i in range(n+1) ] )
+y_t = np.array( [np.zeros(sim_time) for i in range(n+1) ] )
 x_i = np.zeros(n+1)
 y_i = np.zeros(n+1)
+v_t = np.zeros(sim_time)
+c_t = np.array( [np.zeros(sim_time) for i in range(2)] )
+T_t = np.array( [np.zeros(sim_time) for i in range(n-1)] )
+time = np.zeros(3*N_t)
 
 # Start time cycle
-for count in range(3*N_t):
+for count in range(sim_time):
 
   t = count * tstep
+  time[count] = t
   s = vel_s * t
   Phi[0] = alpha_0 * np.cos(Bl * s) + phi_offset
   Phidot[0] = -1*alpha_0*Bl* vel_s * np.sin(Bl * s)
@@ -116,6 +129,9 @@ for count in range(3*N_t):
   Phi = E * Theta + e * Phi[0]
   Phidot = E * Thetadot + e * Phidot[0]
   Phidotdot = E * Thetadotdot + e * Phidotdot[0]
+
+  rotvec = np.array( [np.asmatrix([[np.cos(float(Phi[i]))], [np.sin(float(Phi[i]))]])
+                      for i in range(n)] )
 
   if t == 0:
     # Calculate initial joint positions
@@ -132,20 +148,27 @@ for count in range(3*N_t):
       b = np.sum([lengths[j]*np.cos(Phi[j])*Phidot[j] for j in range(i)])
       joint_vel[i] = joint_vel[0] + np.asmatrix([[a], [b]])
         
-
-  else:
-    
+  else: 
     # Update joint position
     for i in range(n+1):
       joint_pos[i] = joint_pos[i] + joint_vel[i] * tstep
       joint_vel[i] = joint_vel[i] + joint_acl[i] * tstep
       x_t[i, count] = float(joint_pos[i, 0])
       y_t[i, count] = float(joint_pos[i, 1])
-  
 
+
+  # average link angle
+  g_pos = np.array( [ (joint_pos[i] + Glengths[i] * rotvec[i]) for i in range(n) ] )
+  phibar = float(sum(Phi)) / n
+  c_t[0, count] = sum([masses[i]*g_pos[i, 0] for i in range(n)]) / mass_total
+  c_t[1, count] = sum([masses[i]*g_pos[i, 1] for i in range(n)]) / mass_total
+  c_vel = sum( [masses[i]*joint_vel[i] for i in range(n)] ) / mass_total
+  v_t[count] = np.inner(c_vel.reshape(2), np.array([np.cos(phibar), np.sin(phibar)]))
+  
+  
   # Now update joint_acl
 
-  # Calculate friction forces
+  # Calculate friction and torque forces
   # Assumes friction point is at joint
   for i in range(n):
     u_t[i] = np.array([float(np.cos(Phi[i])), float(np.sin(Phi[i]))])
@@ -159,19 +182,16 @@ for count in range(3*N_t):
     ffx[i] = fft[i] * np.cos(Phi[i]) - ffn[i] * np.sin(Phi[i])
     ffy[i] = fft[i] * np.sin(Phi[i]) + ffn[i] * np.cos(Phi[i])
 
+    T_f[i] = (np.sin(Phi[i])*(lengths[i]*np.sum(ffx[i+1:])+flengths[i]*ffx[i]) -
+              np.cos(Phi[i])*(lengths[i]*np.sum(ffy[i+1:])+flengths[i]*ffy[i]))
+    T_0[i] = (lengths[i]*sum([mbar[k]*np.sin(Phi[k]-Phi[i])*Phidot[k]**2 for k in range(i+1, n)]) -
+              mbar[i]*sum([lengths[k]*np.sin(Phi[k]-Phi[i])*Phidot[k]**2 for k in range(i)]))
+
 
   f_f = np.asmatrix([[np.sum(ffx)], [np.sum(ffy)]])
   f_0 = np.asmatrix([[-np.sum([mbar[i]*np.cos(Phi[i])*Phidot[i]**2 for i in range(n)])],
                      [-np.sum([mbar[i]*np.sin(Phi[i])*Phidot[i]**2 for i in range(n)])]])
-
-  # print '   t=', t, ': '
-  # print 'phi: ', Phi[0]
-  # print 'pos: ', joint_pos[0]
-  # print 'vel: ', joint_vel[0]
-  # print u_t[0], u_n[0]
-  # print sign_t[0], sign_n[0]
-  # print fft[0], ffn[0]
-  # print ffx[0], ffy[0]
+  
   
   for i in range(n):
     M_0[i, 0] = -1*mbar[i] * np.sin(Phi[i])
@@ -189,6 +209,32 @@ for count in range(3*N_t):
         M[i, j] = mbar[i] * lengths[j] * np.cos(Phi[j] - Phi[i])
 
 
+    # Calculate joint acceleration from forces.
+  joint_acl[0] = np.linalg.inv(m_0) * m * Phidotdot + np.linalg.inv(m_0) * (f_0 + f_f) - g
+
+  DT = T_0 + T_f + M_0*(joint_acl[0] + g) + M*Phidotdot
+
+  # Calculate joint torques
+  for i in range(n-1):
+    if(i == 0):
+      T[i] = - DT[i]
+    else:
+      T[i] = T[i-1] - DT[i]
+    T_t[i, count] = T[i]      
+
+
+  # calc other joint acl 
+  for i in range(n+1):
+    a = - np.sum([lengths[j]*(np.sin(Phi[j])*Phidotdot[j] +
+                              np.cos(Phi[j]) * Phidot[j]**2) for j in range(i)])
+    b = np.sum([lengths[j]*(np.cos(Phi[j])*Phidotdot[j] -
+                              np.sin(Phi[j]) * Phidot[j]**2) for j in range(i)])
+    joint_acl[i] = joint_acl[0] + np.asmatrix([[a], [b]])
+
+
+    
+    
+  # print '   t=', t, ': '
   # print "m: "
   # print m, '\n'
   # print "m_0: "
@@ -202,117 +248,47 @@ for count in range(3*N_t):
   # print "phidotdot"
   # print Phidotdot
   # print
-
-#  print t, joint_pos[0].reshape(2)
-
-  # Calculate joint acceleration from forces.
-#  print '  t=', t
-  # print m
-  # print Phidotdot
-  # print np.linalg.inv(m_0)
-  # joint_acl[0] = -np.linalg.inv(m_0) * m * Phidotdot - np.linalg.inv(m_0) * (f_0 + f_f) - g
-  # print joint_acl[0]
-  # print np.linalg.inv(m_0) * m * Phidotdot
-  # print np.linalg.inv(m_0) * (f_0 + f_f)m * Phidotdot - f_f - f_0
-  a = - np.sum([mbar[i]*np.sin(Phi[i])*Phidotdot[i] for i in range(n)])
-  b = np.sum([mbar[i]*np.cos(Phi[i])*Phidotdot[i] for i in range(n)])
-#  print np.asmatrix([[a], [b]]) * -(1/mass_total)
-  joint_acl[0] = -(1/mass_total) * (np.asmatrix([[a], [b]]) - f_f - f_0) - g
-  # print (np.asmatrix([[a], [b]]) - f_f + f_0)
-  # print joint_acl[0], '\n'
-  # calc other joint acl 
-  for i in range(n+1):
-    a = - np.sum([lengths[j]*(np.sin(Phi[j])*Phidotdot[j] +
-                              np.cos(Phi[j]) * Phidot[j]**2) for j in range(i)])
-    b = np.sum([lengths[j]*(np.cos(Phi[j])*Phidotdot[j] -
-                              np.sin(Phi[j]) * Phidot[j]**2) for j in range(i)])
-    joint_acl[i] = joint_acl[0] + np.asmatrix([[a], [b]])
-
+  # print 'phi: '
+  # print Phi[0]
+  # print 'pos: '
+  # print joint_pos[0]
+  # print 'vel: '
+  # print joint_vel[0]
+  # print 'unit vecs: '
+  # print u_t[0], u_n[0]
+  # print 'signs: '
+  # print sign_t[0], sign_n[0]
+  # print 'fft, ffn: '
+  # print fft[0], ffn[0]
+  # print 'ffx, ffy'
+  # print ffx[0], ffy[0]
+  # print 'f_f'
+  # print f_f
+  # print 'f_0'
+  # print f_0
   # print 'p0_acl: ', joint_acl[0]
   # print
+  # print
+
 
   # End of time cycle
 
+v_avg = sum(v_t) / sim_time
+print 'avg vel_t: ', v_avg
+  
 plt.plot(x_i, y_i)
 plt.plot(x_t[0], y_t[0])
 plt.plot(x_t[n], y_t[n])
+plt.plot(c_t[0], c_t[1])
 plt.ylabel('y, meters')
 plt.xlabel('x, mmeters')
 plt.axis('equal')
 plt.grid()
 plt.show()
-  
 
+for i in range(n-1):
+  plt.plot(time, T_t[i])
+plt.show()
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# for t in range(0, period * 2, tstep):
-
-  # s(t)
-
-'''
-  s = vel_s * t
-  
-  # Calculate initial vectors
-  Phi[0] = alpha_0 * np.cos((2*Kn*np.pi/L) * s)  + phi_offset  
-
-  for i in range(1, n):
-    Theta[i-1] = -2*alpha_0*np.sin(Bn/2) * np.sin(Bl* s + Bn*i) + heading
-
-  Phi = E * Theta + e * Phi[0]
-
-  Phidot[0] = -1*alpha_0*Bl* vel_s * np.sin(Bl * vel_s * t)
-  init_vel = vel_s * np.asmatrix([[np.cos(Phi[0])], [np.sin(Phi[0])]])
-
-  for i in range(1, n):
-    Thetadot[i-1] = (-4*alpha_0*Kn*np.pi/L)*np.sin(Kn*np.pi/n) * np.cos(Bl*s + Bn*i)
-
-  Phidot = E*Thetadot + e*Phidot[0]
-
-  for i in range(n+1):
-    a = np.sum([lengths[j]*np.cos(Phi[j]) for j in range(i)])
-    b = np.sum([lengths[j]*np.sin(Phi[j]) for j in range(i)])
-    joint_pos[i] = init_pos + np.asmatrix([[a], [b]])
-
-    a = np.sum([-1*lengths[j]*np.sin(Phi[j])*Phidot[j] for j in range(i)])
-    b = np.sum([lengths[j]*np.cos(Phi[j])*Phidot[j] for j in range(i)])
-    joint_vel[i] = init_vel + np.asmatrix([[a], [b]])
-
-    f_posdot[i] = joint_vel + int(flengths[i]*Phidot[i]) * np.asmatrix([[np.cos(Phi[i])], [np.sin(Phi[i])]])
-    u_t[i] = np.array([np.cos(Phi[i]), np.sin(Phi[i])])
-    u_n[i] = np.array([-1*np.sin(Phi[i]), np.cos(Phi[i])])
-    sign_t[i] = int(np.sign(np.inner(f_posdot[i].reshape(2), u_t[i])))
-    sign_n[i] = int(np.sign(np.inner(f_posdot[i].reshape(2), u_n[i])))
-
-
-'''
-
-
-# How to plot
-# plt.plot(x_i, y_i)
-# plt.ylabel('y, meters')
-# plt.xlabel('x, mmeters')
-# plt.axis('equal')
-# plt.grid()
-# plt.show()
+plt.plot(time, v_t)
+plt.show()
