@@ -28,7 +28,7 @@ heading = 0
 Bl = 2*Kn*np.pi/L
 Bn = 2*Kn*np.pi/n
 period = (L / vel_s)
-N_t = 100
+N_t = 500
 tstep = period / N_t
 g = np.asmatrix([[9.8*np.sin(incline)], [0]])
 sim_time = 3*N_t
@@ -111,32 +111,32 @@ c_t = np.array( [np.zeros(sim_time) for i in range(2)] )
 T_t = np.array( [np.zeros(sim_time) for i in range(n-1)] )
 time = np.zeros(3*N_t)
 
+
 # Start time cycle
 for count in range(sim_time):
 
   t = count * tstep
   time[count] = t
   s = vel_s * t
-  Phi[0] = alpha_0 * np.cos(Bl * s) + phi_offset
-  Phidot[0] = -1*alpha_0*Bl* vel_s * np.sin(Bl * s)
-  Phidotdot[0] = -1*alpha_0*Bl*Bl*vel_s**2 * np.cos(Bl * s)
+#  Phi[0] = alpha_0 * np.cos(Bl * s) + phi_offset
+#Phidot[0] = -1*alpha_0*Bl* vel_s * np.sin(Bl * s)
+#  Phidotdot[0] = -1*alpha_0*Bl*Bl*vel_s**2 * np.cos(Bl * s)
 
+  # Calculate Thetas
   for i in range(1, n):
     Theta[i-1] = -2*alpha_0*np.sin(Bn/2) * np.sin(Bl*s + Bn*i) + heading
     Thetadot[i-1] = -2*alpha_0*Bl*np.sin(Bn/2) * np.cos(Bl*s + Bn*i) * vel_s
     Thetadotdot[i-1] = 2*alpha_0*Bl*Bl*np.sin(Bn/2) * np.sin(Bl*s + Bn*i) * vel_s**2
 
-  Phi = E * Theta + e * Phi[0]
-  Phidot = E * Thetadot + e * Phidot[0]
-  Phidotdot = E * Thetadotdot + e * Phidotdot[0]
-
-  rotvec = np.array( [np.asmatrix([[np.cos(float(Phi[i]))], [np.sin(float(Phi[i]))]])
-                      for i in range(n)] )
-
   if t == 0:
-    # Calculate initial joint positions
+    # Initial assumptions for phi_0
+    Phi[0] = alpha_0 + phi_offset
+    Phidot[0] = 0
+    Phi = E * Theta + e * Phi[0]
+    Phidot = E * Thetadot + e * Phidot[0]
+    
+    # Calculate initial joint positions, velocity
     joint_vel[0] = np.asmatrix([[np.cos(float(Phi[0]))], [np.sin(float(Phi[0]))]])
-
     for i in range(n+1):
       a = np.sum([lengths[j]*np.cos(Phi[j]) for j in range(i)])
       b = np.sum([lengths[j]*np.sin(Phi[j]) for j in range(i)])
@@ -149,13 +149,19 @@ for count in range(sim_time):
       joint_vel[i] = joint_vel[0] + np.asmatrix([[a], [b]])
         
   else: 
-    # Update joint position
+    # Update joint position, angle, velocities
     for i in range(n+1):
       joint_pos[i] = joint_pos[i] + joint_vel[i] * tstep
       joint_vel[i] = joint_vel[i] + joint_acl[i] * tstep
       x_t[i, count] = float(joint_pos[i, 0])
       y_t[i, count] = float(joint_pos[i, 1])
+      if i < n:
+        Phi[i] = Phi[i] + Phidot[i] * tstep
+        Phidot[i] = Phidot[i] + Phidotdot[i] * tstep
 
+  # vector for rotating from link to world coordinates      
+  rotvec = np.array( [np.asmatrix([[np.cos(float(Phi[i]))], [np.sin(float(Phi[i]))]])
+                      for i in range(n)] )    
 
   # average link angle
   g_pos = np.array( [ (joint_pos[i] + Glengths[i] * rotvec[i]) for i in range(n) ] )
@@ -164,9 +170,6 @@ for count in range(sim_time):
   c_t[1, count] = sum([masses[i]*g_pos[i, 1] for i in range(n)]) / mass_total
   c_vel = sum( [masses[i]*joint_vel[i] for i in range(n)] ) / mass_total
   v_t[count] = np.inner(c_vel.reshape(2), np.array([np.cos(phibar), np.sin(phibar)]))
-  
-  
-  # Now update joint_acl
 
   # Calculate friction and torque forces
   # Assumes friction point is at joint
@@ -209,19 +212,23 @@ for count in range(sim_time):
         M[i, j] = mbar[i] * lengths[j] * np.cos(Phi[j] - Phi[i])
 
 
-    # Calculate joint acceleration from forces.
-  joint_acl[0] = np.linalg.inv(m_0) * m * Phidotdot + np.linalg.inv(m_0) * (f_0 + f_f) - g
+  # Calculate Phidotdot_0 and joint acceleration
+  M_bar = M_0*np.linalg.inv(m_0)*m - M
+  A = np.asmatrix(np.zeros(shape=(n, n)))
+  for i in range(n):
+    for j in range(n):
+      if j == n-1:
+        A[i, j] = np.sum(M_bar[i])
+      else:
+        A[i, j] = D[i, j]
 
-  DT = T_0 + T_f + M_0*(joint_acl[0] + g) + M*Phidotdot
-
-  # Calculate joint torques
+  RHS = T_f + T_0 - M_0*np.linalg.inv(m_0)*(f_f + f_0) - M_bar * E * Thetadotdot
+  u = np.linalg.solve(A, RHS)
   for i in range(n-1):
-    if(i == 0):
-      T[i] = - DT[i]
-    else:
-      T[i] = T[i-1] - DT[i]
-    T_t[i, count] = T[i]      
-
+    T[i] = u[i]
+  Phidotdot[0] = u[n-1]
+  Phidotdot = E*Thetadotdot + e*Phidotdot[0]
+  joint_acl[0] = np.linalg.inv(m_0) * m * Phidotdot + np.linalg.inv(m_0) * (f_0 + f_f) - g
 
   # calc other joint acl 
   for i in range(n+1):
