@@ -4,13 +4,13 @@ import matplotlib.pyplot as plt
 
 # robot parameters
 mu_t = 0.01
-mu_n = 0.9
+mu_n = 1.
 n = 8
-link_mass = 1.
-link_length = 1.
-link_radius = 0.1
-lG = 0.5 # distance to center of gravity of link
-lf = 0.1 # distance to friction point (wheels)
+link_mass = 0.1
+link_length = 0.1
+link_radius = 0.01
+lG = 0.5*link_length # distance to center of gravity of link
+lf = 0.5*link_length # distance to friction point (wheels)
 masses = np.repeat(link_mass, n)
 lengths = np.repeat(link_length, n)
 Glengths = np.repeat(lG, n)
@@ -20,18 +20,21 @@ mass_total = np.sum(masses)
 
 # motion parameters
 incline = 0 #(np.pi/180) * 10
-alpha_0 = np.pi / 6.
+alpha_0 = np.pi / 10
 Kn = 1
-vel_s = 1.2
-phi_offset = 0
+vel_s = 1
+phi_offset = - 3 * np.pi/180
 heading = 0
 Bl = 2*Kn*np.pi/L
 Bn = 2*Kn*np.pi/n
 period = (L / vel_s)
-N_t = 500
+N_t = 300
 tstep = period / N_t
 g = np.asmatrix([[9.8*np.sin(incline)], [0]])
-sim_time = 3*N_t
+sim_time = 10*N_t
+href = 0
+Kh = 0.5
+
 
   
 # initialize all matrices and vectors
@@ -109,24 +112,23 @@ y_i = np.zeros(n+1)
 v_t = np.zeros(sim_time)
 c_t = np.array( [np.zeros(sim_time) for i in range(2)] )
 T_t = np.array( [np.zeros(sim_time) for i in range(n-1)] )
-time = np.zeros(3*N_t)
-
-
+phibar_t = np.zeros(sim_time)
+time = np.zeros(sim_time)
+dh = 0
+dhdot = 0
 # Start time cycle
 for count in range(sim_time):
 
   t = count * tstep
   time[count] = t
   s = vel_s * t
-#  Phi[0] = alpha_0 * np.cos(Bl * s) + phi_offset
-#Phidot[0] = -1*alpha_0*Bl* vel_s * np.sin(Bl * s)
-#  Phidotdot[0] = -1*alpha_0*Bl*Bl*vel_s**2 * np.cos(Bl * s)
+
 
   # Calculate Thetas
   for i in range(1, n):
     Theta[i-1] = -2*alpha_0*np.sin(Bn/2) * np.sin(Bl*s + Bn*i) + heading
-    Thetadot[i-1] = -2*alpha_0*Bl*np.sin(Bn/2) * np.cos(Bl*s + Bn*i) * vel_s
-    Thetadotdot[i-1] = 2*alpha_0*Bl*Bl*np.sin(Bn/2) * np.sin(Bl*s + Bn*i) * vel_s**2
+    Thetadot[i-1] = -2*alpha_0*Bl*np.sin(Bn/2) * np.cos(Bl*s + Bn*i) * vel_s + dh/tstep
+    Thetadotdot[i-1] = 2*alpha_0*Bl*Bl*np.sin(Bn/2) * np.sin(Bl*s + Bn*i) * vel_s**2 + dhdot/tstep
 
   if t == 0:
     # Initial assumptions for phi_0
@@ -150,14 +152,24 @@ for count in range(sim_time):
         
   else: 
     # Update joint position, angle, velocities
+    joint_pos[0] = joint_pos[0] + joint_vel[0] * tstep
+    joint_vel[0] = joint_vel[0] + joint_acl[0] * tstep
+    Phi[0] = Phi[0] + Phidot[0] * tstep
+    Phidot[0] = Phidot[0] + Phidotdot[0] * tstep
+    Phi = E*Theta + e*Phi[0]
+    Phidot = E*Thetadot + e*Phidot[0]
+    
     for i in range(n+1):
-      joint_pos[i] = joint_pos[i] + joint_vel[i] * tstep
-      joint_vel[i] = joint_vel[i] + joint_acl[i] * tstep
+      a = np.sum([lengths[j]*np.cos(Phi[j]) for j in range(i)])
+      b = np.sum([lengths[j]*np.sin(Phi[j]) for j in range(i)])
+      joint_pos[i] = joint_pos[0] + np.asmatrix([[a], [b]])
       x_t[i, count] = float(joint_pos[i, 0])
       y_t[i, count] = float(joint_pos[i, 1])
-      if i < n:
-        Phi[i] = Phi[i] + Phidot[i] * tstep
-        Phidot[i] = Phidot[i] + Phidotdot[i] * tstep
+      
+      a = np.sum([-1*lengths[j]*np.sin(Phi[j])*Phidot[j] for j in range(i)])
+      b = np.sum([lengths[j]*np.cos(Phi[j])*Phidot[j] for j in range(i)])
+      joint_vel[i] = joint_vel[0] + np.asmatrix([[a], [b]])
+
 
   # vector for rotating from link to world coordinates      
   rotvec = np.array( [np.asmatrix([[np.cos(float(Phi[i]))], [np.sin(float(Phi[i]))]])
@@ -166,10 +178,15 @@ for count in range(sim_time):
   # average link angle
   g_pos = np.array( [ (joint_pos[i] + Glengths[i] * rotvec[i]) for i in range(n) ] )
   phibar = float(sum(Phi)) / n
+  phibar_t[count] = phibar*180/np.pi
   c_t[0, count] = sum([masses[i]*g_pos[i, 0] for i in range(n)]) / mass_total
   c_t[1, count] = sum([masses[i]*g_pos[i, 1] for i in range(n)]) / mass_total
   c_vel = sum( [masses[i]*joint_vel[i] for i in range(n)] ) / mass_total
   v_t[count] = np.inner(c_vel.reshape(2), np.array([np.cos(phibar), np.sin(phibar)]))
+
+  # dhdot = dh/tstep - (heading - Kh*(href - phibar))/tstep
+  # dh = heading - Kh*(href - phibar)
+  # heading = Kh*(href - phibar)
 
   # Calculate friction and torque forces
   # Assumes friction point is at joint
@@ -226,6 +243,7 @@ for count in range(sim_time):
   u = np.linalg.solve(A, RHS)
   for i in range(n-1):
     T[i] = u[i]
+    T_t[i, count] = T[i]
   Phidotdot[0] = u[n-1]
   Phidotdot = E*Thetadotdot + e*Phidotdot[0]
   joint_acl[0] = np.linalg.inv(m_0) * m * Phidotdot + np.linalg.inv(m_0) * (f_0 + f_f) - g
@@ -280,22 +298,56 @@ for count in range(sim_time):
 
   # End of time cycle
 
-v_avg = sum(v_t) / sim_time
-print 'avg vel_t: ', v_avg
-  
-plt.plot(x_i, y_i)
-plt.plot(x_t[0], y_t[0])
-plt.plot(x_t[n], y_t[n])
-plt.plot(c_t[0], c_t[1])
-plt.ylabel('y, meters')
-plt.xlabel('x, mmeters')
-plt.axis('equal')
+v_avg = np.sum(v_t) / sim_time
+T_avg = np.array([np.sum(np.absolute(T_t[i]))/sim_time for i in range(n-1)])
+phibar_avg = np.sum(phibar_t)/sim_time
+v = str('%.3f' % v_avg)
+if incline == 0:
+  inc = 'No'
+else:
+  inc = str(int(180*incline/np.pi)) + ' degree'
+title = 'Robot Trajectory, low mass \n {} Incline'.format(inc)
+txt = "Average translational velocity: {} m/s^2.".format(v)
+fig1 = plt.figure()
+fig1.suptitle(title)
+ax = fig1.add_subplot(111)
+ax.set_ylim([-.5, 0.5])
+#ax.set_ylim([-1.0, 3.0])
+ax.plot(x_i, y_i, label='Initial Robot Position')
+ax.plot(x_t[0], y_t[0], label='Robot Tail Path')
+ax.plot(x_t[n], y_t[n], label='Robot Head Path')
+ax.plot(c_t[0], c_t[1], label='Center of Mass Path')
+ax.set_xlabel('x, meters')
+ax.set_ylabel('y, meters')
+box = ax.get_position()
+ax.set_position([box.x0, box.y0, box.width*0.8, box.height])
+ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+plt.text(0.5, 0.1, txt, ha='center', weight='bold', transform=ax.transAxes)
 plt.grid()
-plt.show()
 
+title = 'Joint Torques, \n {} Incline'.format(inc)
+fig2 = plt.figure()
+fig2.suptitle(title)
+ax = fig2.add_subplot(111)
 for i in range(n-1):
-  plt.plot(time, T_t[i])
-plt.show()
+  ax.plot(time, T_t[i], label='Joint {} torque'.format(i))
+ax.set_xlabel('time, seconds')
+ax.set_ylabel('Torque, N*m')
+box = ax.get_position()
+ax.set_position([box.x0, box.y0, box.width*0.8, box.height])
+ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
 
-plt.plot(time, v_t)
+fig3 = plt.figure()
+fig3.suptitle('Average joint torque magnitutude, \n {} Incline'.format(inc))
+ax = fig3.add_subplot(111)
+ax.bar(range(n-1), T_avg)
+plt.grid()
+
+fig4 = plt.figure()
+fig4.suptitle('Heading Angle, \n {} Incline'.format(inc))
+ax = fig4.add_subplot(111)
+ax.plot(time, phibar_t)
+ax.plot(time, np.repeat(phibar_avg, sim_time))
+plt.grid()
+
 plt.show()

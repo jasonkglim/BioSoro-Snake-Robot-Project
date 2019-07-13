@@ -11,7 +11,7 @@ link_mass = 0.01
 link_length = 0.1
 link_radius = 0.01
 lG = 0.5*link_length # distance to center of gravity of link
-lf = 0.1*link_length # distance to friction point (wheels)
+lf = 0.5*link_length # distance to friction point (wheels)
 masses = np.repeat(link_mass, n)
 lengths = np.repeat(link_length, n)
 Glengths = np.repeat(lG, n)
@@ -29,10 +29,11 @@ heading = 0
 Bl = 2*Kn*np.pi/L
 Bn = 2*Kn*np.pi/n
 period = (L / vel_s)
-N_t = 1000
+N_t = 100
 tstep = period / N_t
 g = np.asmatrix([[9.8*np.sin(incline)], [0]])
-sim_time = 3*N_t
+sim_time = 10*N_t
+
 
   
 # initialize all matrices and vectors
@@ -110,7 +111,8 @@ y_i = np.zeros(n+1)
 v_t = np.zeros(sim_time)
 c_t = np.array( [np.zeros(sim_time) for i in range(2)] )
 T_t = np.array( [np.zeros(sim_time) for i in range(n-1)] )
-time = np.zeros(3*N_t)
+phibar_t = np.zeros(sim_time)
+time = np.zeros(sim_time)
 
 # Start time cycle
 for count in range(sim_time):
@@ -161,6 +163,7 @@ for count in range(sim_time):
   # average link angle
   g_pos = np.array( [ (joint_pos[i] + Glengths[i] * rotvec[i]) for i in range(n) ] )
   phibar = float(sum(Phi)) / n
+  phibar_t[count] = phibar
   c_t[0, count] = sum([masses[i]*g_pos[i, 0] for i in range(n)]) / mass_total
   c_t[1, count] = sum([masses[i]*g_pos[i, 1] for i in range(n)]) / mass_total
   c_vel = sum( [masses[i]*joint_vel[i] for i in range(n)] ) / mass_total
@@ -275,6 +278,7 @@ for count in range(sim_time):
 
 v_avg = np.sum(v_t) / sim_time
 T_avg = np.array([np.sum(np.absolute(T_t[i]))/sim_time for i in range(n-1)])
+phibar_avg = np.sum(phibar_t)/sim_time
 v = str('%.3f' % v_avg)
 if incline == 0:
   inc = 'No'
@@ -316,6 +320,14 @@ fig3.suptitle('Average joint torque magnitutude, \n {} Incline'.format(inc))
 ax = fig3.add_subplot(111)
 ax.bar(range(n-1), T_avg)
 plt.grid()
+
+fig4 = plt.figure()
+fig4.suptitle('Heading Angle, \n {} Incline'.format(inc))
+ax = fig4.add_subplot(111)
+ax.plot(time, phibar_t)
+ax.plot(time, np.repeat(phibar_avg, sim_time))
+plt.grid()
+
 plt.show()
 
 
