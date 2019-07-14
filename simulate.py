@@ -32,7 +32,7 @@ period = (L / vel_s)
 N_t = 100
 tstep = period / N_t
 g = np.asmatrix([[9.8*np.sin(incline)], [0]])
-sim_time = 10*N_t
+sim_time = 1*N_t
 
 
   
@@ -284,10 +284,12 @@ if incline == 0:
   inc = 'No'
 else:
   inc = str(int(180*incline/np.pi)) + ' degree'
-title = 'Robot Trajectory, low mass \n {} Incline'.format(inc)
+
+# Motion plot
+title = 'Robot Trajectory \n {} Incline'.format(inc)
 txt = "Average translational velocity: {} m/s^2.".format(v)
-fig1 = plt.figure()
-fig1.suptitle(title)
+fig1 = plt.figure(figsize=(12, 10))
+fig1.suptitle(title, fontsize=22)
 ax = fig1.add_subplot(111)
 ax.set_ylim([-.5, 0.5])
 #ax.set_ylim([-1.0, 3.0])
@@ -301,7 +303,9 @@ box = ax.get_position()
 ax.set_position([box.x0, box.y0, box.width*0.8, box.height])
 ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
 plt.text(0.5, 0.1, txt, ha='center', weight='bold', transform=ax.transAxes)
-plt.grid()
+plt.savefig('Figures/motion_mun{}_vs{}_psi{}_a{}_phioff{}.png'.format(
+  str(mu_n), str(int(vel_s)), str(int(incline*180/np.pi)), str(int(alpha_0*180/np.pi)),
+  str(int(phi_offset*180/np.pi))))
 
 title = 'Joint Torques, \n {} Incline'.format(inc)
 fig2 = plt.figure()
@@ -314,12 +318,18 @@ ax.set_ylabel('Torque, N*m')
 box = ax.get_position()
 ax.set_position([box.x0, box.y0, box.width*0.8, box.height])
 ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+fig2.savefig('Figures/torques_mun{}_vs{}_psi{}_a{}_phioff{}.png'.format(
+  str(mu_n), str(int(vel_s)), str(int(incline*180/np.pi)), str(int(alpha_0*180/np.pi)),
+  str(int(phi_offset*180/np.pi))))
 
 fig3 = plt.figure()
 fig3.suptitle('Average joint torque magnitutude, \n {} Incline'.format(inc))
 ax = fig3.add_subplot(111)
 ax.bar(range(n-1), T_avg)
 plt.grid()
+fig3.savefig('Figures/torqueavgs_mun{}_vs{}_psi{}_a{}_phioff{}.png'.format(
+  str(mu_n), str(int(vel_s)), str(int(incline*180/np.pi)), str(int(alpha_0*180/np.pi)),
+  str(int(phi_offset*180/np.pi))))
 
 fig4 = plt.figure()
 fig4.suptitle('Heading Angle, \n {} Incline'.format(inc))
@@ -327,6 +337,10 @@ ax = fig4.add_subplot(111)
 ax.plot(time, phibar_t)
 ax.plot(time, np.repeat(phibar_avg, sim_time))
 plt.grid()
+fig4.savefig('Figures/heading_mun{}_vs{}_psi{}_a{}_phioff{}.png'.format(
+  str(mu_n), str(int(vel_s)), str(int(incline*180/np.pi)), str(int(alpha_0*180/np.pi)),
+  str(int(phi_offset*180/np.pi))))
+
 
 plt.show()
 

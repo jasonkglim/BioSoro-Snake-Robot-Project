@@ -22,7 +22,7 @@ mass_total = np.sum(masses)
 incline = 0 #(np.pi/180) * 10
 alpha_0 = np.pi / 10
 Kn = 1
-vel_s = 1
+vel_s = 0.5
 phi_offset = - 3 * np.pi/180
 heading = 0
 Bl = 2*Kn*np.pi/L
@@ -31,7 +31,7 @@ period = (L / vel_s)
 N_t = 300
 tstep = period / N_t
 g = np.asmatrix([[9.8*np.sin(incline)], [0]])
-sim_time = 10*N_t
+sim_time = N_t
 href = 0
 Kh = 0.5
 
@@ -127,8 +127,8 @@ for count in range(sim_time):
   # Calculate Thetas
   for i in range(1, n):
     Theta[i-1] = -2*alpha_0*np.sin(Bn/2) * np.sin(Bl*s + Bn*i) + heading
-    Thetadot[i-1] = -2*alpha_0*Bl*np.sin(Bn/2) * np.cos(Bl*s + Bn*i) * vel_s + dh/tstep
-    Thetadotdot[i-1] = 2*alpha_0*Bl*Bl*np.sin(Bn/2) * np.sin(Bl*s + Bn*i) * vel_s**2 + dhdot/tstep
+    Thetadot[i-1] = -2*alpha_0*Bl*np.sin(Bn/2) * np.cos(Bl*s + Bn*i) * vel_s 
+    Thetadotdot[i-1] = 2*alpha_0*Bl*Bl*np.sin(Bn/2) * np.sin(Bl*s + Bn*i) * vel_s**2
 
   if t == 0:
     # Initial assumptions for phi_0
@@ -186,7 +186,7 @@ for count in range(sim_time):
 
   # dhdot = dh/tstep - (heading - Kh*(href - phibar))/tstep
   # dh = heading - Kh*(href - phibar)
-  # heading = Kh*(href - phibar)
+#  heading = Kh*(href - phibar)
 
   # Calculate friction and torque forces
   # Assumes friction point is at joint
@@ -306,10 +306,12 @@ if incline == 0:
   inc = 'No'
 else:
   inc = str(int(180*incline/np.pi)) + ' degree'
-title = 'Robot Trajectory, low mass \n {} Incline'.format(inc)
+
+# Motion plot
+title = 'Robot Trajectory \n {} Incline'.format(inc)
 txt = "Average translational velocity: {} m/s^2.".format(v)
-fig1 = plt.figure()
-fig1.suptitle(title)
+fig1 = plt.figure(figsize=(12, 9.5))
+fig1.suptitle(title, fontsize=22)
 ax = fig1.add_subplot(111)
 ax.set_ylim([-.5, 0.5])
 #ax.set_ylim([-1.0, 3.0])
@@ -317,37 +319,51 @@ ax.plot(x_i, y_i, label='Initial Robot Position')
 ax.plot(x_t[0], y_t[0], label='Robot Tail Path')
 ax.plot(x_t[n], y_t[n], label='Robot Head Path')
 ax.plot(c_t[0], c_t[1], label='Center of Mass Path')
-ax.set_xlabel('x, meters')
-ax.set_ylabel('y, meters')
+ax.set_xlabel('x, meters', fontsize=16)
+ax.set_ylabel('y, meters', fontsize=16)
 box = ax.get_position()
 ax.set_position([box.x0, box.y0, box.width*0.8, box.height])
 ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
 plt.text(0.5, 0.1, txt, ha='center', weight='bold', transform=ax.transAxes)
-plt.grid()
+plt.savefig('Figures/Theta_motion_mun{}_vs{}_psi{}_a{}_phioff{}.png'.format(
+  str(mu_n), str(int(vel_s)), str(int(incline*180/np.pi)), str(int(np.pi/alpha_0)),
+  str(int(phi_offset*180/np.pi))))
 
 title = 'Joint Torques, \n {} Incline'.format(inc)
-fig2 = plt.figure()
-fig2.suptitle(title)
+fig2 = plt.figure(figsize=(11, 8))
+fig2.suptitle(title, fontsize=22)
 ax = fig2.add_subplot(111)
 for i in range(n-1):
   ax.plot(time, T_t[i], label='Joint {} torque'.format(i))
-ax.set_xlabel('time, seconds')
-ax.set_ylabel('Torque, N*m')
+ax.set_xlabel('time, seconds', fontsize=16)
+ax.set_ylabel('Torque, N*m', fontsize=16)
 box = ax.get_position()
 ax.set_position([box.x0, box.y0, box.width*0.8, box.height])
 ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+fig2.savefig('Figures/Theta_torques_mun{}_vs{}_psi{}_a{}_phioff{}.png'.format(
+  str(mu_n), str(int(vel_s)), str(int(incline*180/np.pi)), str(int(np.pi/alpha_0)),
+  str(int(phi_offset*180/np.pi))))
 
-fig3 = plt.figure()
-fig3.suptitle('Average joint torque magnitutude, \n {} Incline'.format(inc))
+fig3 = plt.figure(figsize=(12, 10))
+fig3.suptitle('Average joint torque magnitutude, \n {} Incline'.format(inc), fontsize=20)
 ax = fig3.add_subplot(111)
 ax.bar(range(n-1), T_avg)
 plt.grid()
+fig3.tight_layout()
+fig3.savefig('Figures/Theta_torqueavgs_mun{}_vs{}_psi{}_a{}_phioff{}.png'.format(
+  str(mu_n), str(int(vel_s)), str(int(incline*180/np.pi)), str(int(np.pi/alpha_0)),
+  str(int(phi_offset*180/np.pi))))
 
-fig4 = plt.figure()
-fig4.suptitle('Heading Angle, \n {} Incline'.format(inc))
+fig4 = plt.figure(figsize=(12, 10))
+fig4.suptitle('Heading Angle, \n {} Incline'.format(inc), fontsize=20)
 ax = fig4.add_subplot(111)
 ax.plot(time, phibar_t)
 ax.plot(time, np.repeat(phibar_avg, sim_time))
 plt.grid()
+fig4.tight_layout
+fig4.savefig('Figures/Theta_heading_mun{}_vs{}_psi{}_a{}_phioff{}.png'.format(
+  str(mu_n), str(int(vel_s)), str(int(incline*180/np.pi)), str(int(np.pi/alpha_0)),
+  str(int(phi_offset*180/np.pi))))
+
 
 plt.show()
