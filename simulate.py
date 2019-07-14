@@ -138,7 +138,7 @@ for count in range(sim_time):
 
   if t == 0:
     # Calculate initial joint positions
-    joint_vel[0] = np.asmatrix([[np.cos(float(Phi[0]))], [np.sin(float(Phi[0]))]])
+    joint_vel[0] = vel_s*np.asmatrix([[np.cos(float(Phi[0]))], [np.sin(float(Phi[0]))]])
 
     for i in range(n+1):
       a = np.sum([lengths[j]*np.cos(Phi[j]) for j in range(i)])
@@ -275,7 +275,8 @@ for count in range(sim_time):
 
   # End of time cycle
 
-
+final_pos = np.array([[float(joint_pos[i, 0]) for i in range(n+1)],
+                      [float(joint_pos[i, 1]) for i in range(n+1)]])
 v_avg = np.sum(v_t) / sim_time
 T_avg = np.array([np.sum(np.absolute(T_t[i]))/sim_time for i in range(n-1)])
 phibar_avg = np.sum(phibar_t)/sim_time
@@ -297,6 +298,7 @@ ax.plot(x_i, y_i, label='Initial Robot Position')
 ax.plot(x_t[0], y_t[0], label='Robot Tail Path')
 ax.plot(x_t[n], y_t[n], label='Robot Head Path')
 ax.plot(c_t[0], c_t[1], label='Center of Mass Path')
+ax.plot(final_pos[0], final_pos[1], label='Final Robot Position')
 ax.set_xlabel('x, meters')
 ax.set_ylabel('y, meters')
 box = ax.get_position()
